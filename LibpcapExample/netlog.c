@@ -1,8 +1,8 @@
 /*
- * main.c
+ * netlog.c
  *
  *  Created on: Aug 17, 2018
- *      Author: svlab UFAM
+ *      Author: Thiago Cavalcante, with some information got from www.tcpdump.org/
  */
 
 #include <stdio.h>
@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include <ctype.h>
 
-
 void packet_handler(
   u_char *args,
   const struct pcap_pkthdr *header,
@@ -23,15 +22,15 @@ void packet_handler(
 );
 void packet_handler2(
   u_char *args,
-  const struct pcap_pkthdr* header,
-  const u_char* packet
+  const struct pcap_pkthdr *header,
+  const u_char *packet
 );
 void packet_handler3(
   u_char *args,
-  const struct pcap_pkthdr *packet_header,
-  const u_char *packet_body
+  const struct pcap_pkthdr *header,
+  const u_char *packet
 );
-void print_packet_info(const u_char *packet, struct pcap_pkthdr packet_header);
+void print_packet_info(struct pcap_pkthdr packet_header);
 void help();
 
 int main(int argc, char *argv[]){
@@ -102,9 +101,8 @@ int main(int argc, char *argv[]){
           printf("No packet found.\n");
           return 2;
         }
-
         /* Function to output some info */
-        print_packet_info(packet, packet_header);
+        print_packet_info(packet_header);
 
         pcap_loop(handle, 1, packet_handler, NULL);
         pcap_close(handle);
@@ -140,23 +138,7 @@ int main(int argc, char *argv[]){
       	  printf("%s\n", error_buffer);
       	  return 1;
       	}
-      	/*
-      	If you call inet_ntoa() more than once
-      	you will overwrite the buffer. If we only stored
-      	the pointer to the string returned by inet_ntoa(),
-      	and then we call it again later for the subnet mask,
-      	our first pointer (ip address) will actually have
-      	the contents of the subnet mask. That is why we are
-      	using a string copy to grab the contents while it is fresh.
-      	The pointer returned by inet_ntoa() is always the same.
-
-      	This is from the man:
-      	The inet_ntoa() function converts the Internet host address in,
-      	given in network byte order, to a string in IPv4 dotted-decimal
-      	notation. The string is returned in a statically allocated
-      	buffer, which subsequent calls will overwrite.
-      	*/
-      	/* Get ip in human readable form */
+      	/* Get ip in decimal form 4 octets (32 bits) ipv4*/
       	address.s_addr = ip_raw;
       	strcpy(ip, inet_ntoa(address));
       	if(ip == NULL)
@@ -164,7 +146,7 @@ int main(int argc, char *argv[]){
       	  perror("inet_ntoa"); /* print error */
       	  return 1;
       	}
-      	/* Get subnet mask in human readable form */
+      	/* Get subnet in decimal form 4 octets (32 bits) ipv4 */
       	address.s_addr = subnet_mask_raw;
       	strcpy(subnet_mask, inet_ntoa(address));
       	if(subnet_mask == NULL)
@@ -173,7 +155,6 @@ int main(int argc, char *argv[]){
       	  return 1;
       	}
 
-//      	printf("Device: %s\n", device);
       	printf("IP address: %s\n", ip);
       	printf("Subnet mask: %s\n", subnet_mask);
         break;
@@ -186,7 +167,8 @@ int main(int argc, char *argv[]){
                 timeout_limit,
                 error_buffer
             );
-        if (handle == NULL) {
+        if(handle == NULL)
+        {
           fprintf(stderr, "Could not open device %s: %s\n", device, error_buffer);
           return 2;
     	}
@@ -213,10 +195,10 @@ int main(int argc, char *argv[]){
         abort();
     }
 
-  for (i = optind; i < argc; i++)
+  for(i = optind; i < argc; i++)
     printf ("Non-option argument %s\n", argv[i]);
 
-    return 0;
+  return 0;
 }
 
 /* Finds the payload of a TCP/IP packet */
@@ -226,6 +208,17 @@ void packet_handler(
   const u_char *packet
 )
 {
+  /* Pointers to start point of various headers */
+  const u_char *ip_header;
+  const u_char *tcp_header;
+  const u_char *payload;
+
+  /* Header lengths in bytes */
+  int ethernet_header_length = 14; /* Doesn't change */
+  int ip_header_length;
+  int tcp_header_length;
+  int payload_length;
+
   /* First, lets make sure we have an IP packet */
   struct ether_header *eth_header;
   eth_header = (struct ether_header *) packet;
@@ -245,17 +238,6 @@ void packet_handler(
      not have the whole packet. */
   printf("Total packet available: %d bytes\n", header->caplen);
   printf("Expected packet size: %d bytes\n", header->len);
-
-  /* Pointers to start point of various headers */
-  const u_char *ip_header;
-  const u_char *tcp_header;
-  const u_char *payload;
-
-  /* Header lengths in bytes */
-  int ethernet_header_length = 14; /* Doesn't change */
-  int ip_header_length;
-  int tcp_header_length;
-  int payload_length;
 
   /* Find start of IP header */
   ip_header = packet + ethernet_header_length;
@@ -304,27 +286,27 @@ void packet_handler(
   printf("Memory address where payload begins: %p\n\n", payload);
 
   /* Print payload in ASCII */
-
-  if (payload_length > 0) {
-      const u_char *temp_pointer = payload;
-      int byte_count = 0;
-      printf("-------------------------------Payload-------------------------------\n\n");
-      while (byte_count++ < payload_length) {
-          printf("%c", *temp_pointer);
-          temp_pointer++;
-      }
-      printf("\n\n---------------------------------------------------------------------\n");
+  if(payload_length > 0)
+  {
+    const u_char *temp_pointer = payload;
+    int byte_count = 0;
+    printf("-------------------------------Payload-------------------------------\n\n");
+    while (byte_count++ < payload_length) {
+      printf("%c", *temp_pointer);
+      temp_pointer++;
+    }
+    printf("\n\n---------------------------------------------------------------------\n");
   }
 
 
   return;
 }
 
-/* This function can be used as a callback for pcap_loop() */
+/* Find if a packet if IP, ARP or Reverse ARP */
 void packet_handler2(
   u_char *args,
-  const struct pcap_pkthdr* header,
-  const u_char* packet
+  const struct pcap_pkthdr *header,
+  const u_char *packet
 )
 {
   struct ether_header *eth_header;
@@ -349,19 +331,29 @@ void packet_handler2(
   {
     printf("Reverse ARP\n");
   }
+  else if(ntohs(eth_header->ether_type) == ETHERTYPE_IPV6)
+  {
+    printf("IPV6\n");
+  }
+  else if(ntohs(eth_header->ether_type) == ETHERTYPE_LOOPBACK)
+  {
+    printf("Loop back\n");
+  }
 }
 
+/* Show some packet infos */
 void packet_handler3(
   u_char *args,
   const struct pcap_pkthdr *packet_header,
   const u_char *packet_body
 )
 {
-  print_packet_info(packet_body, *packet_header);
+  print_packet_info(*packet_header);
   return;
 }
 
-void print_packet_info(const u_char *packet, struct pcap_pkthdr packet_header) {
+void print_packet_info(struct pcap_pkthdr packet_header)
+{
   printf("Packet capture length: %d\n", packet_header.caplen);
   printf("Packet total length %d\n", packet_header.len);
 }

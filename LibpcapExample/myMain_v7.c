@@ -15,6 +15,8 @@
    $ man pcap-filter
 */
 
+void print_packet_info(const u_char *packet, struct pcap_pkthdr packet_header);
+
 /* This function can be used as a callback for pcap_loop() */
 void my_packet_handler(
     u_char *args,
@@ -45,8 +47,10 @@ int main(int argc, char **argv){
     pcap_t *handle;
     char error_buffer[PCAP_ERRBUF_SIZE];
     struct bpf_program filter;
-    char filter_exp[] = "ip";
+    char filter_exp[] = "port";
     bpf_u_int32 subnet_mask, ip;
+    const u_char *packet;
+    struct pcap_pkthdr packet_header;
 
     if (pcap_lookupnet(dev, &ip, &subnet_mask, error_buffer) == -1) {
         printf("Could not get information for device: %s\n", dev);
@@ -54,7 +58,7 @@ int main(int argc, char **argv){
         subnet_mask = 0;
     }
     handle = pcap_open_live(dev, BUFSIZ, 1, 1000, error_buffer);
-    printf("ip=%i\n", ip);
+//    printf("ip=%i\n", ip);
     if (handle == NULL) {
         printf("Could not open %s - %s\n", dev, error_buffer);
         return 2;
@@ -67,11 +71,25 @@ int main(int argc, char **argv){
         printf("Error setting filter - %s\n", pcap_geterr(handle));
         return 2;
     }
+    /* Attempt to capture one packet. If there is no network traffic
+     and the timeout is reached, it will return NULL */
+    packet = pcap_next(handle, &packet_header);
+    if (packet == NULL) {
+      printf("No packet found.\n");
+      return 2;
+    }
 
+    /* Our function to output some info */
+    print_packet_info(packet, packet_header);
     /* pcap_next() or pcap_loop() to get packets from device now */
     /* Only packets over port 80 will be returned. */
-    pcap_loop(handle, 1, my_packet_handler, NULL);
-    pcap_close(handle);
+//    pcap_loop(handle, 1, my_packet_handler, NULL);
+//    pcap_close(handle);
 
     return 0;
+}
+
+void print_packet_info(const u_char *packet, struct pcap_pkthdr packet_header) {
+    printf("Packet capture length: %d\n", packet_header.caplen);
+    printf("Packet total length %d\n", packet_header.len);
 }
